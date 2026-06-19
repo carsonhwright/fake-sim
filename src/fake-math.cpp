@@ -1,6 +1,64 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
+#include <string>
+#include <unordered_map>
 #include "include/fake-math.hpp"
+
+Vec3 Vec3::operator+(const Vec3 &rhs) const {
+    return Vec3{x + rhs.x, y + rhs.y, z + rhs.z};
+}
+
+Vec3 Vec3::operator-(const Vec3 &rhs) const {
+    return Vec3{x - rhs.x, y - rhs.y, z - rhs.z};
+}
+
+Vec3 Vec3::operator*(double s) const {
+    return Vec3{x * s, y * s, z * s};
+}
+
+double Vec3::length() const {
+    return sqrt(x * x + y * y + z * z);
+}
+
+Vec3 Vec3::normalized() const {
+    double len = length();
+    if (len == 0.0) {
+        return Vec3{0.0, 0.0, 0.0};
+    }
+    return Vec3{x / len, y / len, z / len};
+}
+
+Vec3i Vec3i::operator+(const Vec3i &rhs) const {
+    return Vec3i{x + rhs.x, y + rhs.y, z + rhs.z};
+}
+
+Vec3i Vec3i::operator-(const Vec3i &rhs) const {
+    return Vec3i{x - rhs.x, y - rhs.y, z - rhs.z};
+}
+
+Vec3 to_vec3(const Vec3i &v) {
+    return Vec3{(double)v.x, (double)v.y, (double)v.z};
+}
+
+Vec3i round_to_grid(const Vec3 &v) {
+    return Vec3i{(int)lround(v.x), (int)lround(v.y), (int)lround(v.z)};
+}
+
+enum class ParamSelect {param1, param2, unknown};
+
+static ParamSelect to_param_select(const char *param_name) {
+    static const std::unordered_map<std::string, ParamSelect> param_map = {
+        {"param1", ParamSelect::param1},
+        {"param2", ParamSelect::param2},
+    };
+
+    auto it = param_map.find(param_name);
+    if (it != param_map.end()) {
+        return it->second;
+    }
+    return ParamSelect::unknown;
+}
 
 Base::Base(int param1, int param2) {
     parameter1 = param1;
@@ -14,46 +72,15 @@ void Base::show_params() {
     fflush(stdout);
 }
 
-int Base::get_param(char *param_name) {
-    switch(*param_name) {
-        case "param1" : // this doesn't work
+int Base::get_param(const char *param_name) {
+    switch(to_param_select(param_name)) {
+        case ParamSelect::param1 :
             return parameter1;
-        case "param2" : // this doesn't work
+        case ParamSelect::param2 :
             return parameter2;
         default:
-            return NULL;
+            return -1;
     }
-    // TODO but something like the below might
-    /*
-    enum class Color { Red, Green, Unknown };
 
-Color getColor(const std::string& str) {
-    static const std::unordered_map<std::string, Color> colorMap = {
-        {"red", Color::Red},
-        {"green", Color::Green}
-    };
-    
-    auto it = colorMap.find(str);
-    if (it != colorMap.end()) {
-        return it->second;
-    }
-    return Color::Unknown;
-}
-
-int main() {
-    std::string input = "green";
-
-    switch (getColor(input)) {
-        case Color::Red:
-            std::cout << "Stop!" << std::endl;
-            break;
-        case Color::Green:
-            std::cout << "Go!" << std::endl;
-            break;
-        default:
-            std::cout << "Unknown color." << std::endl;
-            break;
-    }
-} */
     return 0;
 }

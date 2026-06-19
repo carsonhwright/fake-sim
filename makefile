@@ -1,10 +1,13 @@
 # tool macros
 CC = gcc# FILL: the C compiler
 CXX := g++
-INCLUDES = -I include -I . #-pthread #TODO do I need this? probably
+INCLUDES = -I include -I . -I /usr/local/include #-pthread #TODO do I need this? probably
 CFLAGS = -Wall -Wextra -g $(INCLUDES)# FILL: compile flags
 #CFLAGS =-Wall -Wextra -g -pthread -L /usr/local/lib/libz $(INCLUDES)# FILL: compile flags
 CXXFLAGS := -Wall -Wextra -g $(INCLUDES)
+# raylib (visualization). Static lib in /usr/local/lib needs these system deps.
+LDFLAGS := -L /usr/local/lib
+LDLIBS := -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 DBGFLAGS = -g
 COBJFLAGS = $(CFLAGS) -c
 CXXOBJFLAGS = $(CXXFLAGS) -c
@@ -37,7 +40,7 @@ default: makedir all
 
 # non-phony targets
 $(TARGET): $(OBJ)
-	$(CXX) -o $@ $(OBJ) $(CXXFLAGS)
+	$(CXX) -o $@ $(OBJ) $(CXXFLAGS) $(LDFLAGS) $(LDLIBS)
 
 $(OBJ_PATH)/%.o: $(SRC_PATH)/%.c
 	$(CC) $(COBJFLAGS) -o $@ $<
@@ -52,7 +55,7 @@ $(DBG_PATH)/%.o: $(SRC_PATH)/%.cpp
 	$(CXX) $(CXXOBJFLAGS) $(DBGFLAGS) -o $@ $<
 
 $(TARGET_DEBUG): $(OBJ_DEBUG)
-	$(CXX) $(CXXFLAGS) $(DBGFLAGS) $(OBJ_DEBUG) -o $@
+	$(CXX) $(CXXFLAGS) $(DBGFLAGS) $(OBJ_DEBUG) -o $@ $(LDFLAGS) $(LDLIBS)
 
 # phony rules
 .PHONY: makedir
