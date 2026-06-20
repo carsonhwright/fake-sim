@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <vector>
+#include <math.h>
 #include "raylib.h"
 #include "include/fake-math.hpp"
+#include "include/fake-geo.hpp"
 #include "include/sim.hpp"
 
 // Map an integer grid cell into raylib's coordinate space (Y up). One grid
@@ -19,7 +21,7 @@ static Color value_color(short v, short vmin, short vmax) {
     if (t > 1.0f) t = 1.0f;
     unsigned char r = (unsigned char)(t * 255.0f);
     unsigned char b = (unsigned char)((1.0f - t) * 255.0f);
-    return Color{r, 40, b, 40};   // alpha 40/255 -> very translucent
+    return Color{r, 8, b, 8};   // alpha 40/255 -> very translucent
 }
 
 int main() {
@@ -28,6 +30,7 @@ int main() {
     PixelSpace space{PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE};
 
     // --- Define the route (integer cells) --------------------------------
+    // TODO these need to be in some kind of config file
     Route route;
     route.add_waypoint(Vec3i{0, 0, 0});
     route.add_waypoint(Vec3i{100, 0, 0});
@@ -35,16 +38,19 @@ int main() {
     route.add_waypoint(Vec3i{0, 10, 20});
     route.add_waypoint(Vec3i{10, 20, 10});
 
-    // --- Voxel field: one short per cell ---------------------------------
-    // Sparse storage: only cells we set carry data. A future routine will fill
-    // shapes/gradients; for now we set a modest slab so there's something to
-    // sample and visualise. value == y gives a vertical gradient.
+    // --- Voxel field: shapes built with geo:: ----------------------------
+    // geo:: returns the coordinates that make up a shape; the stamp loop is
+    // where per-cell values / gradients get assigned. Here the box uses a
+    // vertical gradient (value == y) and the sphere a flat value.
     VoxelField field(space);
-    for (int z = 0; z <= 30; ++z)
-        for (int y = 0; y <= 40; ++y)
-            for (int x = 0; x <= 60; ++x)
-                field.set(x, y, z, (short)y);
-    // Individual cells can be updated by coordinate too:
+    unsigned char temp = VoxelField::pack_value(1, 120);
+    for (const Vec3i &c : geo::box(Vec3i{0, 0, 0}, 30, 30, 30)) {
+        field.set(c, 20);
+    }
+    for (const Vec3i &c : geo::sphere(Vec3i{120, 60, 40}, 18)) {
+        field.set(c, 20);
+    }
+    // Individual cells can still be updated by coordinate too:
     field.set(Vec3i{100, 0, 0}, 9);
     printf("field active cells: %zu (sparse)\n", field.active_cells());
 
@@ -80,9 +86,23 @@ int main() {
     cam.fovy     = 45.0f;
     cam.projection = CAMERA_PERSPECTIVE;
 
+    // Orbit-camera state, derived from the initial framing above. The camera
+    // sits on a sphere of radius cam_dist around cam_target, at angles
+    // (cam_yaw, cam_pitch). Mouse drives all three: left-drag orbits,
+    // right/middle-drag pans the target, wheel zooms.
+    Vector3 cam_target = center;
+    Vector3 off = {cam.position.x - center.x,
+                   cam.position.y - center.y,
+                   cam.position.z - center.z};
+    float cam_dist  = sqrtf(off.x * off.x + off.y * off.y + off.z * off.z);
+    float cam_yaw   = atan2f(off.x, off.z);
+    float cam_pitch = asinf(off.y / cam_dist);
+    const float min_dist = 2.0f;
+    const float max_dist = maxdim * 6.0f;
+
     // Snapshot of the field's active cells for rendering, plus its value range
     // for the colour ramp. The field is static during playback, so build once.
-    std::vector<std::pair<Vec3i, short>> field_cells = field.entries();
+    std::vector<std::pair<Vec3i, unsigned char>> field_cells = field.entries();
     short vmin = 0, vmax = 1;
     if (!field_cells.empty()) {
         vmin = vmax = field_cells[0].second;
@@ -120,7 +140,49 @@ int main() {
         if (idx > frames.size() - 1) idx = frames.size() - 1;
         const Frame &f = frames[idx];
 
-        // Camera is intentionally static (no UpdateCamera call).
+        // --- Camera: left-drag orbit, right/middle-drag pan, wheel zoom ---
+        {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0.0f) {
+                cam_dist *= powf(0.9f, wheel);
+                if (cam_dist < min_dist) cam_dist = min_dist;
+                if (cam_dist > max_dist) cam_dist = max_dist;
+            }
+
+            Vector2 md = GetMouseDelta();
+            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                cam_yaw   -= md.x * 0.005f;
+                cam_pitch += md.y * 0.005f;
+                const float lim = 1.55f;            // ~89 degrees, avoid flip
+                if (cam_pitch >  lim) cam_pitch =  lim;
+                if (cam_pitch < -lim) cam_pitch = -lim;
+            }
+
+            // Forward (target - position) and a screen-aligned basis for panning.
+            Vector3 fwd = {-cosf(cam_pitch) * sinf(cam_yaw),
+                           -sinf(cam_pitch),
+                           -cosf(cam_pitch) * cosf(cam_yaw)};
+            Vector3 right = {-fwd.z, 0.0f, fwd.x};  // cross(fwd, worldUp)
+            float rl = sqrtf(right.x * right.x + right.z * right.z);
+            if (rl > 1e-4f) { right.x /= rl; right.z /= rl; }
+            Vector3 up = {right.y * fwd.z - right.z * fwd.y,
+                          right.z * fwd.x - right.x * fwd.z,
+                          right.x * fwd.y - right.y * fwd.x};
+
+            if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) ||
+                IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+                float k = cam_dist * 0.0015f;       // pan scales with distance
+                cam_target.x += (-md.x * right.x + md.y * up.x) * k;
+                cam_target.y += (-md.x * right.y + md.y * up.y) * k;
+                cam_target.z += (-md.x * right.z + md.y * up.z) * k;
+            }
+
+            cam.target = cam_target;
+            cam.position = Vector3{
+                cam_target.x + cam_dist * cosf(cam_pitch) * sinf(cam_yaw),
+                cam_target.y + cam_dist * sinf(cam_pitch),
+                cam_target.z + cam_dist * cosf(cam_pitch) * cosf(cam_yaw)};
+        }
 
         // --- Draw ---
         BeginDrawing();
@@ -129,8 +191,8 @@ int main() {
         BeginMode3D(cam);
 
         // Pixel-space bounds: a wireframe box from origin to (w,h,d).
-        DrawCubeWires(center, (float)space.width, (float)space.height,
-                      (float)space.depth, DARKGRAY);
+        // DrawCubeWires(center, (float)space.width, (float)space.height,
+        //               (float)space.depth, DARKGRAY);
         DrawGrid(int(maxdim/8), 11);
 
         // Route as a trail of small voxels (one per recorded cell).
@@ -162,7 +224,9 @@ int main() {
                             playing ? "PLAYING" : "PAUSED"),
                  12, 60, 20, LIGHTGRAY);
         DrawText("SPACE play/pause  R restart  UP/DOWN speed  LEFT/RIGHT scrub",
-                 12, screenH - 28, 18, GRAY);
+                 12, screenH - 48, 18, GRAY);
+        DrawText("mouse: drag rotate  right/middle-drag pan  wheel zoom",
+                 12, screenH - 26, 18, GRAY);
 
         EndDrawing();
     }

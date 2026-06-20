@@ -9,8 +9,12 @@ long PixelSpace::cell_count() const {
 // (x, y, z) into one 64-bit key with 21 bits each (up to 2,097,151 per axis).
 static const uint64_t COORD_BITS = 21;
 static const uint64_t COORD_MASK = (1ull << COORD_BITS) - 1;
+static const unsigned char TERRAIN_BITS = 1;
+static const unsigned char TERRAIN_MASK = (1 << TERRAIN_BITS) - 1;
+static const unsigned char DECIBEL_BITS = 7;
+static const unsigned char DECIBEL_MASK = ((1 << DECIBEL_BITS) - 1) << TERRAIN_BITS;
 
-VoxelField::VoxelField(const PixelSpace &space, short default_val)
+VoxelField::VoxelField(const PixelSpace &space, unsigned char default_val)
     : default_value(default_val), space_(space) {}
 
 uint64_t VoxelField::key(int x, int y, int z) const {
@@ -29,7 +33,7 @@ bool VoxelField::in_bounds(const Vec3i &c) const {
     return in_bounds(c.x, c.y, c.z);
 }
 
-short VoxelField::get(int x, int y, int z) const {
+unsigned char VoxelField::get(int x, int y, int z) const {
     if (!in_bounds(x, y, z)) {
         return default_value;
     }
@@ -37,11 +41,11 @@ short VoxelField::get(int x, int y, int z) const {
     return (it == data_.end()) ? default_value : it->second;
 }
 
-short VoxelField::get(const Vec3i &c) const {
+unsigned char VoxelField::get(const Vec3i &c) const {
     return get(c.x, c.y, c.z);
 }
 
-void VoxelField::set(int x, int y, int z, short value) {
+void VoxelField::set(int x, int y, int z, unsigned char value) {
     if (!in_bounds(x, y, z)) {
         return;
     }
@@ -52,12 +56,30 @@ void VoxelField::set(int x, int y, int z, short value) {
     }
 }
 
-void VoxelField::set(const Vec3i &c, short value) {
+void VoxelField::set(const Vec3i &c, unsigned char value) {
     set(c.x, c.y, c.z, value);
 }
 
-std::vector<std::pair<Vec3i, short>> VoxelField::entries() const {
-    std::vector<std::pair<Vec3i, short>> out;
+unsigned char VoxelField::pack_value(int is_terrain, int decibel) {
+    unsigned char ret;
+
+    ret = ((decibel << TERRAIN_BITS) & DECIBEL_MASK) | (is_terrain & TERRAIN_MASK);
+
+    return ret;
+}
+
+std::vector<int> VoxelField::unpack_value(unsigned char value) {
+    // TODO I don't know if this and the above are the right idea. If a voxel in the field
+    // received the assignment of both a decibel and terrain value, was the voxel defined 
+    // correctly? Probably not, or it could allow simplicity in separately defining fields
+    // that have decibels and terrain. IE God made the land then the air and sea...
+    // Then there needs to be a way to make these a part of the set function.
+    std::vector<int> ret;
+    return ret;
+}
+
+std::vector<std::pair<Vec3i, unsigned char>> VoxelField::entries() const {
+    std::vector<std::pair<Vec3i, unsigned char>> out;
     out.reserve(data_.size());
     for (const auto &kv : data_) {
         Vec3i c{(int)(kv.first & COORD_MASK),

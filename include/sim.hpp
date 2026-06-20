@@ -20,7 +20,7 @@ struct PixelSpace {
     long cell_count() const;   // width * height * depth
 };
 
-// A scalar field over the voxel grid: a cell (x, y, z) can hold a `short`
+// A scalar field over the voxel grid: a cell (x, y, z) can hold a `unsigned char`
 // value, addressable by its integer coordinate. Values are read and written by
 // coordinate, and the particle samples the cell it occupies.
 //
@@ -32,35 +32,43 @@ struct PixelSpace {
 class VoxelField {
 public:
     VoxelField() = default;
-    explicit VoxelField(const PixelSpace &space, short default_val = 0);
+    explicit VoxelField(const PixelSpace &space, unsigned char default_val = 0);
 
     bool in_bounds(int x, int y, int z) const;
     bool in_bounds(const Vec3i &c) const;
 
     // Read a cell. Cells never set -- and out-of-bounds cells -- return
     // `default_value`, so sampling stays safe everywhere.
-    short get(int x, int y, int z) const;
-    short get(const Vec3i &c) const;
+    unsigned char get(int x, int y, int z) const;
+    unsigned char get(const Vec3i &c) const;
 
     // Write a cell. Out-of-bounds writes are ignored. Writing default_value
     // erases the entry, keeping storage sparse.
-    void set(int x, int y, int z, short value);
-    void set(const Vec3i &c, short value);
+    // TODO I think the char could be brought down to a char, bitmasked
+    // so that we can have dB values AND a "solid object flag"
+    void set(int x, int y, int z, unsigned char value);
+    void set(const Vec3i &c, unsigned char value);
 
     const PixelSpace &space() const { return space_; }
     size_t active_cells() const { return data_.size(); }
 
     // Iterate the cells that actually hold a (non-default) value, e.g. for
     // visualization. Returns coordinate/value pairs.
-    std::vector<std::pair<Vec3i, short>> entries() const;
+    std::vector<std::pair<Vec3i, unsigned char>> entries() const;
 
-    short default_value = 0;
+    unsigned char default_value = 0;
+
+    // Pack terrian and decibels together, to be used by set to support
+    // more than one phase of field value assignment (separating terrain
+    // generation and signal generation)
+    static unsigned char pack_value(int is_terrain, int decibel);
+    static std::vector<int> unpack_value(unsigned char value);
 
 private:
     uint64_t key(int x, int y, int z) const;
 
     PixelSpace space_;
-    std::unordered_map<uint64_t, short> data_;
+    std::unordered_map<uint64_t, unsigned char> data_;
 };
 
 // A route is an ordered list of integer waypoints. The particle travels in
@@ -124,7 +132,7 @@ struct Frame {
     int distance;        // distance travelled along route (cells)
     Vec3i position;      // grid cell
     Vec3i velocity;      // velocity vector (cells/s)
-    short value;         // voxel field value at this cell (what the particle "sees")
+    unsigned char value;         // voxel field value at this cell (what the particle "sees")
 };
 
 // Run the simulation to completion at a fixed timestep, capturing one frame
