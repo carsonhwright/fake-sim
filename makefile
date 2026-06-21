@@ -16,6 +16,13 @@ BIN_PATH := bin
 OBJ_PATH := obj
 SRC_PATH := src
 DBG_PATH := debug
+TEST_PATH := tests
+
+# tests: one binary per tests/*.cpp, linked against the non-raylib objects
+# (the sim/geo/math core). Add a new file to tests/ and it's picked up.
+TEST_SRC := $(wildcard $(TEST_PATH)/*.cpp)
+TEST_BIN := $(addprefix $(BIN_PATH)/, $(notdir $(basename $(TEST_SRC))))
+TEST_LINK_OBJ := $(OBJ_PATH)/sim.o $(OBJ_PATH)/fake-geo.o $(OBJ_PATH)/fake-math.o
 
 # compile macros
 TARGET_NAME := fake # FILL: target name
@@ -67,6 +74,15 @@ all: $(TARGET)
 
 .PHONY: debug
 debug: $(TARGET_DEBUG)
+
+# build + run the test suite
+$(BIN_PATH)/%: $(TEST_PATH)/%.cpp $(TEST_LINK_OBJ)
+	@mkdir -p $(BIN_PATH)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(TEST_LINK_OBJ) -lm
+
+.PHONY: test
+test: $(TEST_BIN)
+	@for t in $(TEST_BIN); do echo "== $$t =="; ./$$t || exit 1; done
 
 .PHONY: clean
 clean:
